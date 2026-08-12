@@ -1,0 +1,5 @@
+﻿pandas
+openpyxl
+scikit-learn
+sentence-transformers>=3.0.0
+certifi

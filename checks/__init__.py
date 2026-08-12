@@ -1,0 +1,1 @@
+"""Ticket-quality validation rules."""
