@@ -7,25 +7,31 @@ def is_passing_result(value):
     return str(value).strip().upper().startswith("OK")
 
 
+def is_error_result(value):
+    return str(value).strip().upper().startswith("ERROR")
+
+
+def is_warning_result(value):
+    return str(value).strip().upper().startswith("WARNING")
+
+
 def add_quality_indicators(tickets):
     result = tickets.copy()
     check_columns = [column for column in result.columns if column.endswith(" Check")]
     if not check_columns:
         result["Count_Warnings"] = 0
-        result["valid_no_Not"] = "Valid"
+        result["Valid_or_Not"] = "Valid"
         result["Quality Score"] = 0.0
         result["Quality Status"] = "NOT EVALUATED"
         return result
     passed = result[check_columns].map(is_passing_result).sum(axis=1)
-    result["Count_Warnings"] = result[check_columns].apply(
-        lambda row: row.map(lambda value: str(value).strip().upper().startswith("WARNING")).sum(),
-        axis=1,
-    )
-    result["valid_no_Not"] = result["Count_Warnings"].map(
-        lambda warning_count: "Valid" if warning_count == 0 else "Not Valid"
-    )
+    result["Count_Warnings"] = result[check_columns].apply(lambda row: row.map(is_warning_result).sum(), axis=1)
+    result["Count_Errors"] = result[check_columns].apply(lambda row: row.map(is_error_result).sum(), axis=1)
+    # Warnings are review items; only explicit blocking errors invalidate a
+    # ticket.  This prevents an informational check from changing validity.
+    result["Valid_or_Not"] = result["Count_Errors"].map(lambda count: "Not Valid" if count else "Valid")
     result["Quality Score"] = (passed / len(check_columns) * 100).round(1)
-    result["Quality Status"] = result["Quality Score"].map(lambda score: "PASS" if score == 100 else "NEEDS REVIEW")
+    result["Quality Status"] = result.apply(lambda row: "PASS" if row["Count_Errors"] == 0 and row["Count_Warnings"] == 0 else "NEEDS REVIEW", axis=1)
     return result
 
 

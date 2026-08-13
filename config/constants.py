@@ -7,7 +7,7 @@ OUTPUT_FILE = PROJECT_ROOT / "reports" / "local_analysis_output.xlsx"
 
 TICKET_TYPE_MAPPING = {
     "Label_003": "INFRA", 
-     "Label_018": "AMTS",
+    "Label_026": "AMTS",
     "Label_034": "REFACTOR_TECHNICA",
     "Label_132": "REFACTOR_OTHER", 
     "Label_015": "SW_BUG"
@@ -49,13 +49,16 @@ COMMON_ALLOWED_LABELS = [
 
 ALLOWED_LABELS_BY_TICKET_TYPE = {
     "INFRA": ["Label_003"],
-    "AMTS": ["Label_018"],
+    "AMTS": ["Label_026"],
     "REFACTOR_TECHNICA": ["Label_034"],
     "REFACTOR_OTHER": ["Label_132"],
     "SW_BUG": [ "Label_015"]
 }
 
-TG_REPORT_MARKERS = ["TestMgmt", "Report", "Occurrence Filter", "[URL_REMOVED]"]
+# A Jira export may redact URLs, so a literal URL placeholder is not evidence of
+# a missing report.  TG validation is only applicable when a ticket refers to
+# TG/occurrence-filter information at all.
+TG_REPORT_MARKERS = ["TestMgmt", "Occurrence Filter"]
 TG_TEXT_COLUMNS = ["Description", "Custom field (Other Text)", "Other Text"]
 TC_TEXT_COLUMNS = ["Description", "Custom field (Other Text)", "Other Text"]
 FOLLOW_UP_COLUMNS = ["Follow-up", "Follow Up", "Followup", "Custom field (Follow-up)", "Custom field (Follow Up)"]

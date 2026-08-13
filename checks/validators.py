@@ -13,11 +13,33 @@ if PROJECT_ROOT not in sys.path:
 from config.constants import *
 from utils.helpers import get_text, get_first_available_text, collect_text
 
+
+LABEL_PATTERN = re.compile(r"(?<![A-Za-z0-9_])Label_\d+(?![A-Za-z0-9_])")
+
+
+def is_blank(value):
+    """Safely identify blank scalar or collection values from Excel exports."""
+    if value is None:
+        return True
+    if isinstance(value, (list, tuple, set)):
+        return not any(not is_blank(item) for item in value)
+    return bool(pd.isna(value)) or not str(value).strip()
+
+
+def parse_labels(labels):
+    """Return exact anonymised label tokens from a Jira label cell."""
+    if is_blank(labels):
+        return set()
+    text = " | ".join(map(str, labels)) if isinstance(labels, (list, tuple, set)) else str(labels)
+    if text.strip().casefold() in {"no labels", "none"}:
+        return set()
+    return set(LABEL_PATTERN.findall(text))
+
 def detect_ticket_type(labels):
-    if pd.isna(labels) or str(labels) == "No labels":
+    if not parse_labels(labels):
         return "WARNING: No matching ticket type"
     
-    labels = str(labels)
+    labels = parse_labels(labels)
     for label, ticket_type in TICKET_TYPE_MAPPING.items():
         if label in labels:
             return ticket_type
@@ -25,10 +47,10 @@ def detect_ticket_type(labels):
 
 
 def check_sample_labels(labels):
-    if pd.isna(labels) or str(labels) == "No labels":
+    if not parse_labels(labels):
         return "WARNING: No sample label found"
     
-    labels = str(labels)
+    labels = parse_labels(labels)
     found_samples = [name for lbl, name in SAMPLE_LABEL_MAPPING.items() if lbl in labels]
     
     if found_samples:
@@ -63,7 +85,7 @@ def check_classification(row, classification_column):
         return "WARNING: Classification column is missing"
 
     classification = row[classification_column]
-    labels = str(row["Labels"])
+    labels = parse_labels(row["Labels"])
 
     if pd.isna(classification):
         return "WARNING: Classification is missing"
@@ -78,8 +100,8 @@ def check_classification(row, classification_column):
     if classification not in VALID_CLASSIFICATIONS:
         return f"WARNING: Unknown classification ({classification})"
 
-    has_class_003_os_label = any(label in labels for label in CLASS_003_OS_LABELS)
-    has_class_002_os_label = any(label in labels for label in CLASS_002_OS_LABELS)
+    has_class_003_os_label = bool(labels.intersection(CLASS_003_OS_LABELS))
+    has_class_002_os_label = bool(labels.intersection(CLASS_002_OS_LABELS))
 
     if classification == "Class_003" and not has_class_003_os_label:
         return "WARNING: Class_003 requires Label_025 or Label_007"
@@ -100,6 +122,19 @@ def check_priority(priority):
     return "OK"
 
 
+def check_closed_ticket_resolution(row):
+    """Require a resolution only when the Jira status is Closed."""
+    if "Status" not in row or "Resolution" not in row:
+        return "WARNING: Status or Resolution field is missing"
+    status = get_text(row, "Status")
+    if status.casefold() != "closed":
+        return "OK: Ticket is not closed"
+    resolution = get_text(row, "Resolution")
+    if not resolution or resolution.casefold() in {"none", "unresolved", "no resolution"}:
+        return "WARNING: Closed ticket has no resolution"
+    return "OK: Closed ticket is resolved"
+
+
 def check_categorization(categorization):
     if pd.isna(categorization):
         return "WARNING: Categorization is empty"
@@ -115,7 +150,7 @@ def check_categorization(categorization):
 
 
 def check_sample_label_categorization(row):
-    labels = str(row["Labels"])
+    labels = parse_labels(row["Labels"])
     categorization = str(row["Custom field (Categorization)"]).strip() if not pd.isna(row["Custom field (Categorization)"]) else ""
 
     for label, expected_categorization in SAMPLE_LABEL_CATEGORIZATION_MAPPING.items():
@@ -125,41 +160,55 @@ def check_sample_label_categorization(row):
 
 
 def check_affects_version(row):
-    labels = str(row["Labels"])
+    labels = parse_labels(row["Labels"])
     affects_version = row["Affects Version/s"]
 
-    if not any(label in labels for label in MANDATORY_AFFECTS_LABELS):
+    if not labels.intersection(MANDATORY_AFFECTS_LABELS):
         return "OK"
 
-    if pd.isna(affects_version) or str(affects_version).strip() == "" or str(affects_version).lower() == "none":
+    if is_blank(affects_version) or str(affects_version).strip().casefold() == "none":
         return "WARNING: Affects Version/s is mandatory"
     return "OK"
 
 
 def extract_label_values(labels):
-    if pd.isna(labels) or str(labels) == "No labels":
-        return []
-    numbered_labels = re.findall(r"Label_\d+", str(labels))
-    return sorted(set(numbered_labels + list(SAMPLE_LABEL_MAPPING.keys())))
+    return sorted(parse_labels(labels))
+
+
+def check_known_expected_label(row):
+    """Pass when at least one documented ticket-type label is present."""
+    labels = set(extract_label_values(row["Labels"]))
+    matched_types = [ticket_type for label, ticket_type in TICKET_TYPE_MAPPING.items() if label in labels]
+    if matched_types:
+        return "OK: " + ", ".join(matched_types)
+    return "WARNING: No known expected ticket-type label"
 
 
 def check_extra_labels(row):
-    ticket_type = row["Ticket Type"]
-    if str(ticket_type).startswith("WARNING"):
-        return "WARNING: Cannot validate extra labels without a detected ticket type"
+    """Report undocumented labels without treating them as invalid."""
+    labels = set(extract_label_values(row["Labels"]))
+    expected_type_labels = set(TICKET_TYPE_MAPPING)
+    documented_non_type_labels = set().union(
+        SAMPLE_LABEL_MAPPING,
+        CLASS_003_OS_LABELS,
+        CLASS_002_OS_LABELS,
+        MANDATORY_AFFECTS_LABELS,
+    )
+    known_labels = expected_type_labels | documented_non_type_labels
+    unknown_labels = sorted(labels - known_labels)
 
-    labels = extract_label_values(row["Labels"])
-    allowed_labels = set(COMMON_ALLOWED_LABELS + ALLOWED_LABELS_BY_TICKET_TYPE.get(ticket_type, []))
-    unexpected_labels = [label for label in labels if label not in allowed_labels]
-
-    if unexpected_labels:
-        return "WARNING: Unexpected labels found (" + ", ".join(unexpected_labels) + ")"
-    return "OK"
+    if unknown_labels:
+        return "WARNING: Undocumented labels found (" + ", ".join(unknown_labels) + ")"
+    return "OK: No undocumented labels"
 
 
 def check_tg_report_markers(row):
     text = collect_text(row, TG_TEXT_COLUMNS)
-    missing_markers = [marker for marker in TG_REPORT_MARKERS if marker not in text]
+    normalized = text.casefold()
+    applicable = any(marker.casefold() in normalized for marker in TG_REPORT_MARKERS)
+    if not applicable:
+        return "NOT APPLICABLE: No TG report reference"
+    missing_markers = [marker for marker in TG_REPORT_MARKERS if marker.casefold() not in normalized]
     if missing_markers:
         return "WARNING: Missing TG report markers (" + ", ".join(missing_markers) + ")"
     return "OK"
@@ -193,7 +242,7 @@ def check_infra_process(row):
 def check_tc_validation(row):
     other_text = get_first_available_text(row, ["Custom field (Other Text)", "Other Text"])
     combined_text = collect_text(row, TC_TEXT_COLUMNS)
-    labels = str(row["Labels"])
+    labels = parse_labels(row["Labels"])
     test_related = "test" in combined_text.lower() or "TC_" in combined_text or "Label_015" in labels
     tc_ids = re.findall(r"TC_\d+", combined_text)
 
