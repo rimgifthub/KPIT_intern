@@ -17,6 +17,13 @@ def is_warning_result(value):
 
 def add_quality_indicators(tickets):
     result = tickets.copy()
+    # Older exports used a misspelled validity column.  Do not carry it into
+    # new reports; Valid_or_Not is the single authoritative validity field.
+    legacy_validity_columns = [
+        column for column in result.columns if str(column).casefold() == "valid_no_not"
+    ]
+    if legacy_validity_columns:
+        result = result.drop(columns=legacy_validity_columns)
     check_columns = [column for column in result.columns if column.endswith(" Check")]
     if not check_columns:
         result["Count_Warnings"] = 0
@@ -27,9 +34,11 @@ def add_quality_indicators(tickets):
     passed = result[check_columns].map(is_passing_result).sum(axis=1)
     result["Count_Warnings"] = result[check_columns].apply(lambda row: row.map(is_warning_result).sum(), axis=1)
     result["Count_Errors"] = result[check_columns].apply(lambda row: row.map(is_error_result).sum(), axis=1)
-    # Warnings are review items; only explicit blocking errors invalidate a
-    # ticket.  This prevents an informational check from changing validity.
-    result["Valid_or_Not"] = result["Count_Errors"].map(lambda count: "Not Valid" if count else "Valid")
+    # Warnings identify missing information for review. Only an explicit rule
+    # violation (ERROR) makes a ticket invalid.
+    result["Valid_or_Not"] = result["Count_Errors"].map(
+        lambda count: "Not Valid" if count else "Valid"
+    )
     result["Quality Score"] = (passed / len(check_columns) * 100).round(1)
     result["Quality Status"] = result.apply(lambda row: "PASS" if row["Count_Errors"] == 0 and row["Count_Warnings"] == 0 else "NEEDS REVIEW", axis=1)
     return result

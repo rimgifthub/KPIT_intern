@@ -95,20 +95,20 @@ def check_classification(row, classification_column):
         return "WARNING: Classification is missing"
 
     if classification in INVALID_CLASSIFICATIONS:
-        return f"WARNING: Invalid classification ({classification})"
+        return f"ERROR: Invalid classification ({classification})"
 
     if classification not in VALID_CLASSIFICATIONS:
-        return f"WARNING: Unknown classification ({classification})"
+        return f"ERROR: Unknown classification ({classification})"
 
     has_class_003_os_label = bool(labels.intersection(CLASS_003_OS_LABELS))
     has_class_002_os_label = bool(labels.intersection(CLASS_002_OS_LABELS))
 
     if classification == "Class_003" and not has_class_003_os_label:
-        return "WARNING: Class_003 requires Label_025 or Label_007"
+        return "ERROR: Class_003 requires Label_025 or Label_007"
     if classification == "Class_002" and not has_class_002_os_label:
-        return "WARNING: Class_002 requires Label_017 or Label_008"
+        return "ERROR: Class_002 requires Label_017 or Label_008"
     if classification == "Class_001" and not (has_class_003_os_label and has_class_002_os_label):
-        return "WARNING: Class_001 requires labels from both OS groups"
+        return "ERROR: Class_001 requires labels from both OS groups"
 
     return "OK"
 
@@ -131,7 +131,7 @@ def check_closed_ticket_resolution(row):
         return "OK: Ticket is not closed"
     resolution = get_text(row, "Resolution")
     if not resolution or resolution.casefold() in {"none", "unresolved", "no resolution"}:
-        return "WARNING: Closed ticket has no resolution"
+        return "ERROR: Closed ticket has no resolution"
     return "OK: Closed ticket is resolved"
 
 

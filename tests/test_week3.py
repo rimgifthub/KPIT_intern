@@ -6,19 +6,21 @@ from tempfile import TemporaryDirectory
 import pandas as pd
 from io import StringIO
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.duplicate_analysis import DuplicateAnalysisService
-from checks.validators import check_closed_ticket_resolution, check_extra_labels, check_known_expected_label, check_sample_labels, extract_label_values
+from checks.validators import check_attachments_or_logs, check_classification, check_closed_ticket_resolution, check_extra_labels, check_known_expected_label, check_sample_labels, extract_label_values
 from src.reporting import add_quality_indicators, build_similarity_report
 from src.workflow import export_reports, print_ticket_quality_results
 
 
 class Week3Tests(unittest.TestCase):
-    def test_duplicate_analysis_ranks_similar_ticket_first(self):
+    @patch("src.duplicate_analysis.get_similarity_scores", return_value=([0.9, 0.1], "test"))
+    def test_duplicate_analysis_ranks_similar_ticket_first(self, _similarity):
         tickets = pd.DataFrame([
             {"Issue key": "ONE-1", "Created": "2026-01-03", "Summary": "Login fails after update", "Description": "Login error"},
             {"Issue key": "ONE-2", "Created": "2026-01-02", "Summary": "Login error after software update", "Description": "Cannot login"},
@@ -34,7 +36,13 @@ class Week3Tests(unittest.TestCase):
         self.assertEqual(scored.loc[0, "Quality Status"], "NEEDS REVIEW")
         self.assertEqual(scored.loc[0, "Valid_or_Not"], "Valid")
 
-    def test_duplicate_analysis_excludes_future_tickets(self):
+    def test_legacy_validity_column_is_removed(self):
+        scored = add_quality_indicators(pd.DataFrame([{"valid_no_Not": "Valid", "Description Check": "OK"}]))
+        self.assertNotIn("valid_no_Not", scored.columns)
+        self.assertIn("Valid_or_Not", scored.columns)
+
+    @patch("src.duplicate_analysis.get_similarity_scores", return_value=([0.9], "test"))
+    def test_duplicate_analysis_excludes_future_tickets(self, _similarity):
         tickets = pd.DataFrame([
             {"Issue key": "ONE-1", "Created": "2026-01-02", "Summary": "Login fails", "Description": "Login error"},
             {"Issue key": "ONE-2", "Created": "2026-01-01", "Summary": "Login error", "Description": "Cannot login"},
@@ -63,8 +71,22 @@ class Week3Tests(unittest.TestCase):
 
     def test_closed_tickets_require_a_resolution(self):
         self.assertEqual(check_closed_ticket_resolution({"Status": "Closed", "Resolution": "Done"}), "OK: Closed ticket is resolved")
-        self.assertEqual(check_closed_ticket_resolution({"Status": "Closed", "Resolution": " "}), "WARNING: Closed ticket has no resolution")
+        self.assertEqual(check_closed_ticket_resolution({"Status": "Closed", "Resolution": " "}), "ERROR: Closed ticket has no resolution")
         self.assertEqual(check_closed_ticket_resolution({"Status": "Open", "Resolution": ""}), "OK: Ticket is not closed")
+
+    def test_closed_ticket_without_resolution_is_not_valid(self):
+        result = check_closed_ticket_resolution({"Status": "Closed", "Resolution": ""})
+        scored = add_quality_indicators(pd.DataFrame([{"Closed Ticket Resolution Check": result}]))
+        self.assertEqual(scored.loc[0, "Valid_or_Not"], "Not Valid")
+
+    def test_attachment_check_requires_semantic_evidence_not_jira_markup(self):
+        self.assertEqual(check_attachments_or_logs("Screenshot: !image.png!"), "WARNING: Attachment, log, or trace is missing")
+        self.assertEqual(check_attachments_or_logs("[^server-output.txt]"), "WARNING: Attachment, log, or trace is missing")
+        self.assertEqual(check_attachments_or_logs("Attached diagnostic traces are available."), "OK")
+
+    def test_mandatory_classification_label_rule_is_blocking(self):
+        result = check_classification({"Custom field (Classification)": "Class_002", "Labels": "Label_003"}, "Custom field (Classification)")
+        self.assertEqual(result, "ERROR: Class_002 requires Label_017 or Label_008")
 
     def test_export_reports_does_not_duplicate_existing_results(self):
         report = pd.DataFrame([{"Ticket": "ONE-1"}])
