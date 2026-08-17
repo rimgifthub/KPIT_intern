@@ -60,11 +60,3 @@ The output workbook contains:
 ```powershell
 python -m unittest discover -s tests -v
 ```
-
-## Final presentation
-
-`Final_Presentation.pptx` is generated from `tools/create_presentation.py`:
-
-```powershell
-python tools\create_presentation.py
-```
