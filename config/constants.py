@@ -7,7 +7,7 @@ OUTPUT_FILE = PROJECT_ROOT / "reports" / "local_analysis_output.xlsx"
 
 TICKET_TYPE_MAPPING = {
     "Label_003": "INFRA", 
-    "Label_026": "AMTS",
+    "Label_018": "AMTS",
     "Label_034": "REFACTOR_TECHNICA",
     "Label_132": "REFACTOR_OTHER", 
     "Label_015": "SW_BUG"
@@ -49,7 +49,7 @@ COMMON_ALLOWED_LABELS = [
 
 ALLOWED_LABELS_BY_TICKET_TYPE = {
     "INFRA": ["Label_003"],
-    "AMTS": ["Label_026"],
+    "AMTS": ["Label_018"],
     "REFACTOR_TECHNICA": ["Label_034"],
     "REFACTOR_OTHER": ["Label_132"],
     "SW_BUG": [ "Label_015"]
