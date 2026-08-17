@@ -75,4 +75,6 @@ REPRODUCTION_STEP_MARKERS = [
     "actions to reproduce", "how to reproduce",
 ]
 EXPECTED_RESULT_MARKERS = ["expected result", "expected result/behavior", "expected behaviour"]
-ATTACHMENT_LOG_MARKERS = ["attachment", "attachments", "log", "logs", "trace", "traces", "[^", "!"]
+# Only use semantic evidence terms. Jira markup such as "!" and "[^" is
+# common in descriptions and must not by itself count as diagnostic evidence.
+ATTACHMENT_LOG_MARKERS = ["attachment", "attachments", "log", "logs", "trace", "traces"]
