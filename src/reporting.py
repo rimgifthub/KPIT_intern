@@ -62,6 +62,17 @@ def build_similarity_report(ticket, duplicate_result):
     source_id = next((str(ticket[column]) for column in ticket_columns if column in ticket), "UNKNOWN")
     rows = []
     llm_review = duplicate_result.get("llm_review", {})
+    if duplicate_result.get("analysis_status") == "not-performed":
+        return pd.DataFrame([{
+            "Source Ticket": source_id,
+            "Rank": "",
+            "Candidate Ticket": "",
+            "Candidate Summary": "",
+            "Similarity Score (%)": "",
+            "Potential Duplicate": "NOT ANALYSED",
+            "LLM Review Status": llm_review.get("status", "not-run"),
+            "LLM Assessment": duplicate_result.get("analysis_message", "Duplicate analysis not performed."),
+        }])
     for rank, match in enumerate(duplicate_result.get("ranked_matches", []), start=1):
         candidate_id = next((str(match[column]) for column in ticket_columns if column in match), "UNKNOWN")
         score = float(match.get("SimilarityScore", 0))

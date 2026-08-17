@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.duplicate_analysis import DuplicateAnalysisService
-from checks.validators import check_attachments_or_logs, check_classification, check_closed_ticket_resolution, check_extra_labels, check_known_expected_label, check_sample_labels, extract_label_values
+from checks.validators import check_attachments_or_logs, check_classification, check_closed_ticket_resolution, check_extra_labels, check_known_expected_label, check_sample_labels, check_tc_validation, extract_label_values
 from src.reporting import add_quality_indicators, build_similarity_report
 from src.workflow import export_reports, print_ticket_quality_results
 
@@ -51,6 +51,19 @@ class Week3Tests(unittest.TestCase):
         result = DuplicateAnalysisService().analyze(tickets.iloc[0].to_dict(), tickets)
         self.assertEqual([row["Issue key"] for row in result["historical_tickets"].to_dict("records")], ["ONE-2"])
 
+    def test_duplicate_analysis_reports_missing_creation_date(self):
+        tickets = pd.DataFrame([
+            {"Issue key": "ONE-1", "Created": "", "Summary": "Login fails", "Description": "Login error"},
+            {"Issue key": "ONE-2", "Created": "2026-01-01", "Summary": "Login error", "Description": "Cannot login"},
+        ])
+        result = DuplicateAnalysisService().analyze(tickets.iloc[0].to_dict(), tickets)
+        self.assertEqual(result["analysis_status"], "not-performed")
+        self.assertEqual(result["similarity_method"], "not-performed")
+        self.assertIn("creation date missing", result["analysis_message"])
+        report = build_similarity_report(tickets.iloc[0].to_dict(), result)
+        self.assertEqual(report.loc[0, "Potential Duplicate"], "NOT ANALYSED")
+        self.assertIn("creation date missing", report.loc[0, "LLM Assessment"])
+
     def test_labels_are_exact_tokens(self):
         self.assertEqual(check_sample_labels("Label_0380"), "WARNING: No sample label found")
         self.assertEqual(extract_label_values(""), [])
@@ -87,6 +100,16 @@ class Week3Tests(unittest.TestCase):
     def test_mandatory_classification_label_rule_is_blocking(self):
         result = check_classification({"Custom field (Classification)": "Class_002", "Labels": "Label_003"}, "Custom field (Classification)")
         self.assertEqual(result, "ERROR: Class_002 requires Label_017 or Label_008")
+
+    def test_tc_validation_does_not_treat_generic_test_text_as_tc_related(self):
+        generic_test = {
+            "Labels": "Label_015",
+            "Description": "Test execution failed in the test environment.",
+            "Custom field (Other Text)": "Diagnostic details provided.",
+        }
+        self.assertEqual(check_tc_validation(generic_test), "OK")
+        tc_ticket = {**generic_test, "Description": "TC_123 failed during execution."}
+        self.assertEqual(check_tc_validation(tc_ticket), "OK")
 
     def test_export_reports_does_not_duplicate_existing_results(self):
         report = pd.DataFrame([{"Ticket": "ONE-1"}])

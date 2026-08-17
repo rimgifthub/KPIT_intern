@@ -242,9 +242,8 @@ def check_infra_process(row):
 def check_tc_validation(row):
     other_text = get_first_available_text(row, ["Custom field (Other Text)", "Other Text"])
     combined_text = collect_text(row, TC_TEXT_COLUMNS)
-    labels = parse_labels(row["Labels"])
-    test_related = "test" in combined_text.lower() or "TC_" in combined_text or "Label_015" in labels
-    tc_ids = re.findall(r"TC_\d+", combined_text)
+    tc_ids = re.findall(r"\bTC_\d+\b", combined_text)
+    test_related = bool(tc_ids)
 
     if not other_text:
         return "WARNING: Custom field (Other Text) is empty"

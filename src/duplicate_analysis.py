@@ -1,6 +1,8 @@
 ﻿"""Rank likely duplicate Jira tickets using semantic sentence similarity."""
 
-from src.duplicate_detector import get_historical_tickets
+import pandas as pd
+
+from src.duplicate_detector import CREATED_COLUMNS, get_historical_tickets
 from src.duplicate_llm import build_duplicate_llm_prompt, review_duplicate_candidates
 from src.similarity import (
     build_comparison_text,
@@ -21,6 +23,18 @@ class DuplicateAnalysisService:
         self.use_llm = use_llm
 
     def analyze(self, ticket, all_tickets):
+        created_column = next((column for column in CREATED_COLUMNS if column in all_tickets.columns), None)
+        if created_column is None:
+            return self._not_performed(
+                all_tickets,
+                "Duplicate analysis not performed — creation-date column is missing.",
+            )
+        if pd.isna(pd.to_datetime(ticket.get(created_column), errors="coerce")):
+            return self._not_performed(
+                all_tickets,
+                "Duplicate analysis not performed — creation date missing or invalid.",
+            )
+
         historical_tickets = get_historical_tickets(ticket, all_tickets)
         if historical_tickets.empty:
             return {
@@ -29,6 +43,8 @@ class DuplicateAnalysisService:
                 "llm_prompt": "",
                 "llm_review": {"status": "not-run", "assessment": "No historical tickets were found."},
                 "similarity_method": "sentence-embedding",
+                "analysis_status": "completed",
+                "analysis_message": "No historical tickets were found.",
             }
 
         current_text = build_comparison_text(ticket.get("Summary"), ticket.get("Description"))
@@ -53,9 +69,26 @@ class DuplicateAnalysisService:
             "llm_prompt": llm_prompt,
             "llm_review": llm_review,
             "similarity_method": similarity_method,
+            "analysis_status": "completed",
+            "analysis_message": "Duplicate analysis completed.",
+        }
+
+    @staticmethod
+    def _not_performed(all_tickets, message):
+        """Return an explicit result when chronological comparison is impossible."""
+        return {
+            "historical_tickets": all_tickets.iloc[0:0].copy(),
+            "ranked_matches": [],
+            "llm_prompt": "",
+            "llm_review": {"status": "not-run", "assessment": message},
+            "similarity_method": "not-performed",
+            "analysis_status": "not-performed",
+            "analysis_message": message,
         }
 
     def format_summary(self, ticket, duplicate_result):
+        if duplicate_result.get("analysis_status") == "not-performed":
+            return duplicate_result["analysis_message"]
         ranked_matches = duplicate_result.get("ranked_matches", [])
         if not ranked_matches:
             return "No historical duplicate candidates were found."
@@ -75,4 +108,3 @@ class DuplicateAnalysisService:
         if llm_review.get("status") != "not-run":
             lines.extend(["", f"Local LLM review ({llm_review.get('status', 'unknown')}):", llm_review.get("assessment", "")])
         return "\n".join(lines)
-

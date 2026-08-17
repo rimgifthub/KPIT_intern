@@ -124,7 +124,9 @@ def print_analysis_dashboard(ticket_id, ticket_count, duplicate_result, ticket):
     print("-" * 60)
     print(f"{'Rank':<7}{'Ticket':<13}{'Similarity':>12}")
     print(f"{'-' * 4:<7}{'-' * 10:<13}{'-' * 10:>12}")
-    if not ranked_matches:
+    if duplicate_result.get("analysis_status") == "not-performed":
+        print(duplicate_result.get("analysis_message", "Duplicate analysis not performed."))
+    elif not ranked_matches:
         print("No historical tickets are available for comparison.")
     else:
         for rank, match in enumerate(ranked_matches, start=1):
